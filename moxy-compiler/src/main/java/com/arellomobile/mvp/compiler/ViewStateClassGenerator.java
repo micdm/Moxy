@@ -54,16 +54,15 @@ final class ViewStateClassGenerator extends ClassGenerator<TypeElement>
 
 		mViewClassName = getClassName(typeElement);
 
-		String builder = "package " + fullClassName.substring(0, fullClassName.lastIndexOf(".")) + ";\n" +
+		String importSource = "package " + fullClassName.substring(0, fullClassName.lastIndexOf(".")) + ";\n" +
 				"\n" +
 				"import com.arellomobile.mvp.viewstate.MvpViewState;\n" +
 				"import com.arellomobile.mvp.viewstate.ViewCommand;\n" +
 				"import com.arellomobile.mvp.viewstate.ViewCommands;\n" +
 				"import com.arellomobile.mvp.viewstate.strategy.AddToEndSingleStrategy;\n" +
 				"import com.arellomobile.mvp.viewstate.strategy.AddToEndStrategy;\n" +
-				"import com.arellomobile.mvp.viewstate.strategy.StateStrategy;\n" +
-				"\n" +
-				"public class " + fullClassName.substring(fullClassName.lastIndexOf(".") + 1) + "$$State extends MvpViewState<" + mViewClassName + "> implements " + mViewClassName + "\n" +
+				"import com.arellomobile.mvp.viewstate.strategy.StateStrategy;\n";
+		String classSource = "\npublic class " + fullClassName.substring(fullClassName.lastIndexOf(".") + 1) + "$$State extends MvpViewState<" + mViewClassName + "> implements " + mViewClassName + "\n" +
 				"{\n" +
 				"\tprivate ViewCommands<" + mViewClassName + "> mViewCommands = new ViewCommands<>();\n" +
 				"\n" +
@@ -111,6 +110,7 @@ final class ViewStateClassGenerator extends ClassGenerator<TypeElement>
 			methodsCounter.put(method.name, counter);
 		}
 
+		List<Method> observableReturningMethods = new ArrayList<>();
 		for (Method method : methods)
 		{
 			String throwTypesString = join(", ", method.thrownTypes);
@@ -145,35 +145,99 @@ final class ViewStateClassGenerator extends ClassGenerator<TypeElement>
 				argumentsWrapperNewInstance = "new " + method.paramsClassName + "(" + argumentsString + ");\n";
 			}
 
-			builder += "\t@Override\n" +
-					"\tpublic " + method.genericType + method.resultType + " " + method.name + "(" + join(", ", method.arguments) + ")" + throwTypesString + "\n" +
-					"\t{\n" +
-					"\t\t" + argumentClassName + " " + fieldName + " = " + argumentsWrapperNewInstance +
-					"\t\tmViewCommands.beforeApply(LocalViewCommand." + method.uniqueName + ", " + fieldName + ");\n" +
-					"\n" +
-					"\t\tif (mViews == null || mViews.isEmpty())\n" +
-					"\t\t{\n" +
+			if (method.resultType.startsWith("rx.Observable")) {
+				String subjectType = method.resultType.substring(method.resultType.indexOf("<") + 1, method.resultType.lastIndexOf(">"));
+				String subjectName = method.name + "_Subject";
+				classSource +=
+						"\tprotected BehaviorSubject<" + subjectType + "> " + subjectName + " = BehaviorSubject.create();\n\n";
+				classSource += "\t@Override\n" +
+						"\tpublic " + method.genericType + method.resultType + " " + method.name + "(" + join(", ", method.arguments) + ")" + throwTypesString + "\n" +
+						"\t{\n" +
+						"\t\t" + argumentClassName + " " + fieldName + " = " + argumentsWrapperNewInstance +
+						"\t\tmViewCommands.beforeApply(LocalViewCommand." + method.uniqueName + ", " + fieldName + ");\n" +
+						"\n" +
+						"\t\tif (mViews != null && !mViews.isEmpty())\n" +
+						"\t\t{\n" +
+						"\t\t\tmViewCommands.afterApply(LocalViewCommand." + method.uniqueName + ", " + fieldName + ");\n" +
+						"\t\t}\n" +
+						"\n" +
+						"\t\treturn " + subjectName + ".asObservable();\n" +
+						"\t}\n" +
+						"\n";
+				observableReturningMethods.add(method);
+			} else {
+				classSource += "\t@Override\n" +
+						"\tpublic " + method.genericType + method.resultType + " " + method.name + "(" + join(", ", method.arguments) + ")" + throwTypesString + "\n" +
+						"\t{\n" +
+						"\t\t" + argumentClassName + " " + fieldName + " = " + argumentsWrapperNewInstance +
+						"\t\tmViewCommands.beforeApply(LocalViewCommand." + method.uniqueName + ", " + fieldName + ");\n" +
+						"\n" +
+						"\t\tif (mViews == null || mViews.isEmpty())\n" +
+						"\t\t{\n" +
+						"\t\t\treturn;\n" +
+						"\t\t}\n" +
+						"\n" +
+						"\t\tfor(" + mViewClassName + " view : mViews)\n" +
+						"\t\t{\n" +
+						"\t\t\tview." + method.name + "(" + argumentsString + ");\n" +
+						"\t\t}\n" +
+						"\n" +
+						"\t\tmViewCommands.afterApply(LocalViewCommand." + method.uniqueName + ", " + fieldName + ");\n" +
+						"\t}\n" +
+						"\n";
+			}
+		}
+
+		if (!observableReturningMethods.isEmpty()) {
+			classSource +=
+					"\tprotected Map<" + mViewClassName + ", Subscription> subscriptions = new HashMap<>();\n" +
+					"\t\n" +
+					"\t@Override\n" +
+					"\tpublic void attachView(" + mViewClassName + " view) {\n" +
+					"\t\tsuper.attachView(view);\n" +
+					"\t\tif (subscriptions.containsKey(view)) {\n" +
 					"\t\t\treturn;\n" +
+					"\t\t}\n";
+			for (Method method: observableReturningMethods) {
+				String observableType = method.resultType.substring(method.resultType.indexOf("<") + 1, method.resultType.lastIndexOf(">"));
+				classSource +=
+						"\t\tsubscriptions.put(view, view." + method.name + "().subscribe(new Action1<" + observableType + ">() {\n" +
+						"\t\t\t@Override\n" +
+						"\t\t\tpublic void call(" + observableType + " s) {\n" +
+						"\t\t\t\t" + method.name + "_Subject.onNext(s);\n" +
+						"\t\t\t}\n" +
+						"\t\t}));\n";
+			}
+			classSource +=
+					"\t}\n\n" +
+					"\t@Override\n" +
+					"\tpublic void detachView(" + mViewClassName + " view) {\n" +
+					"\t\tif (subscriptions.containsKey(view)) {\n" +
+					"\t\t\tsubscriptions.get(view).unsubscribe();\n" +
+					"\t\t\tsubscriptions.remove(view);\n" +
 					"\t\t}\n" +
-					"\n" +
-					"\t\tfor(" + mViewClassName + " view : mViews)\n" +
-					"\t\t{\n" +
-					"\t\t\tview." + method.name + "(" + argumentsString + ");\n" +
-					"\t\t}\n" +
-					"\n" +
-					"\t\tmViewCommands.afterApply(LocalViewCommand." + method.uniqueName + ", " + fieldName + ");\n" +
-					"\t}\n" +
-					"\n";
+					"\t\tsuper.detachView(view);\n" +
+					"\t}\n\n";
 		}
 
 		if (!methods.isEmpty())
 		{
-			builder = generateLocalViewCommand(mViewClassName, builder, methods);
+			classSource = generateLocalViewCommand(mViewClassName, classSource, methods);
 		}
 
-		builder += "}\n";
+		classSource += "}\n";
 
-		classGeneratingParams.setBody(builder);
+		if (!observableReturningMethods.isEmpty()) {
+			importSource +=
+					"import java.util.Map;\n" +
+					"import java.util.HashMap;\n" +
+					"import rx.Observable;\n" +
+					"import rx.Subscription;\n" +
+					"import rx.subjects.BehaviorSubject;\n" +
+					"import rx.functions.Action1;\n";
+		}
+
+		classGeneratingParams.setBody(importSource + classSource);
 		classGeneratingParamsList.add(classGeneratingParams);
 
 		return true;
