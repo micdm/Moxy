@@ -197,11 +197,12 @@ final class ViewStateClassGenerator extends ClassGenerator<TypeElement>
 					"\t\tsuper.attachView(view);\n" +
 					"\t\tif (subscriptions.containsKey(view)) {\n" +
 					"\t\t\treturn;\n" +
-					"\t\t}\n";
+					"\t\t}\n" +
+					"\t\tCompositeSubscription subscription = new CompositeSubscription();\n";
 			for (Method method: observableReturningMethods) {
 				String observableType = method.resultType.substring(method.resultType.indexOf("<") + 1, method.resultType.lastIndexOf(">"));
 				classSource +=
-						"\t\tsubscriptions.put(view, view." + method.name + "().subscribe(new Action1<" + observableType + ">() {\n" +
+						"\t\tsubscription.add(view." + method.name + "().subscribe(new Action1<" + observableType + ">() {\n" +
 						"\t\t\t@Override\n" +
 						"\t\t\tpublic void call(" + observableType + " s) {\n" +
 						"\t\t\t\t" + method.name + "_Subject.onNext(s);\n" +
@@ -209,6 +210,7 @@ final class ViewStateClassGenerator extends ClassGenerator<TypeElement>
 						"\t\t}));\n";
 			}
 			classSource +=
+					"\t\tsubscriptions.put(view, subscription);\n" +
 					"\t}\n\n" +
 					"\t@Override\n" +
 					"\tpublic void detachView(" + mViewClassName + " view) {\n" +
@@ -234,7 +236,8 @@ final class ViewStateClassGenerator extends ClassGenerator<TypeElement>
 					"import rx.Observable;\n" +
 					"import rx.Subscription;\n" +
 					"import rx.subjects.BehaviorSubject;\n" +
-					"import rx.functions.Action1;\n";
+					"import rx.functions.Action1;\n" +
+					"import rx.subscriptions.CompositeSubscription;\n";
 		}
 
 		classGeneratingParams.setBody(importSource + classSource);
