@@ -1,9 +1,10 @@
 package com.arellomobile.mvp;
 
-import java.util.HashMap;
-import java.util.Map;
-
 import com.arellomobile.mvp.presenter.PresenterType;
+
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
 
 /**
  * Date: 17-Dec-15
@@ -73,6 +74,28 @@ public class PresenterStore
 		}
 
 		return tagMvpPresenterMap.remove(tag);
+	}
+
+	public void removeAll(PresenterType type, String tag) {
+		Map<Class<? extends MvpPresenter>, Map<String, MvpPresenter>> presenters = getPresenters(type);
+		Iterator<Map<String, MvpPresenter>> iterator = presenters.values().iterator();
+		while (iterator.hasNext()) {
+			if (removeAll(iterator.next(), tag)) {
+				iterator.remove();
+			}
+		}
+	}
+
+	private boolean removeAll(Map<String, MvpPresenter> presenters, String tag) {
+		Iterator<Map.Entry<String, MvpPresenter>> iterator = presenters.entrySet().iterator();
+		while (iterator.hasNext()) {
+			Map.Entry<String, MvpPresenter> entry = iterator.next();
+			if (entry.getKey().startsWith(tag)) {
+				entry.getValue().onDestroy();
+				iterator.remove();
+			}
+		}
+		return presenters.isEmpty();
 	}
 
 	private Map<Class<? extends MvpPresenter>, Map<String, MvpPresenter>> getPresenters(PresenterType type)
