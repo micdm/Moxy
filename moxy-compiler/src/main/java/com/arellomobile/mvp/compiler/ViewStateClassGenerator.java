@@ -149,7 +149,7 @@ final class ViewStateClassGenerator extends ClassGenerator<TypeElement>
 				String subjectType = method.resultType.substring(method.resultType.indexOf("<") + 1, method.resultType.lastIndexOf(">"));
 				String subjectName = method.name + "_Subject";
 				classSource +=
-						"\tprotected BehaviorSubject<" + subjectType + "> " + subjectName + " = BehaviorSubject.create();\n\n";
+						"\tprotected PublishSubject<" + subjectType + "> " + subjectName + " = PublishSubject.create();\n\n";
 				classSource += "\t@Override\n" +
 						"\tpublic " + method.genericType + method.resultType + " " + method.name + "(" + join(", ", method.arguments) + ")" + throwTypesString + "\n" +
 						"\t{\n" +
@@ -235,7 +235,7 @@ final class ViewStateClassGenerator extends ClassGenerator<TypeElement>
 					"import java.util.HashMap;\n" +
 					"import rx.Observable;\n" +
 					"import rx.Subscription;\n" +
-					"import rx.subjects.BehaviorSubject;\n" +
+					"import rx.subjects.PublishSubject;\n" +
 					"import rx.functions.Action1;\n" +
 					"import rx.subscriptions.CompositeSubscription;\n";
 		}
